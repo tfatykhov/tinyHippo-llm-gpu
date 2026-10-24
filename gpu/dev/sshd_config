@@ -1,0 +1,33 @@
+# sshd for the tinyHippo remote dev container. Key-only, one user.
+# The container publishes no ports; it is reached only over Tailscale.
+Port 22
+
+HostKey /etc/ssh/host_keys/ssh_host_ed25519_key
+HostKey /etc/ssh/host_keys/ssh_host_rsa_key
+
+# Keys are supplied at run time (secrets/authorized_keys in compose.yml) and
+# installed root-owned by entrypoint.sh, so the user cannot add keys.
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+# Must stay on. The user has no password, so the account is locked; with
+# UsePAM no, OpenSSH refuses even key logins to locked accounts. PAM also
+# applies /etc/environment, which carries the CUDA and NEST paths.
+UsePAM yes
+
+# AllowUsers is appended by entrypoint.sh for the configured user.
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding local
+GatewayPorts no
+PermitTunnel no
+PermitUserEnvironment no
+
+ClientAliveInterval 60
+ClientAliveCountMax 5
+PrintMotd no
+Subsystem sftp /usr/lib/openssh/sftp-server

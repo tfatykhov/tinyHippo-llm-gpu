@@ -1,0 +1,43 @@
+# Remote dev container. Usage and access model: README.md in this directory.
+#
+#   docker compose -f gpu/dev/compose.yml up -d --build
+#
+# No host directories are mounted and no ports are published: the container is
+# reachable only over Tailscale, and only sees its own volumes.
+name: tinyhippo-dev
+
+services:
+  dev:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-tinyhippo-nestgpu:latest}"
+        DEV_USER: "${DEV_USER:-max}"
+    image: tinyhippo-dev:latest
+    hostname: "${TS_HOSTNAME:-tinyhippo-gpu}"
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DEV_USER: "${DEV_USER:-max}"
+      TS_HOSTNAME: "${TS_HOSTNAME:-tinyhippo-gpu}"
+    volumes:
+      - home:/home/${DEV_USER:-max}
+      - tailscale:/var/lib/tailscale
+      - ssh-host-keys:/etc/ssh/host_keys
+      # Staged, not used in place: Windows bind mounts show up as mode 0777, which
+      # sshd refuses. entrypoint.sh copies the file in as root:root 0644.
+      - ./secrets/authorized_keys:/run/secrets/authorized_keys:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  home:
+  tailscale:
+  ssh-host-keys:
