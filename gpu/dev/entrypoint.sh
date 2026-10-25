@@ -45,7 +45,10 @@ echo "[entrypoint] sshd listening on port 22 (container network only; no publish
 
 # Tailscale in userspace mode needs no /dev/net/tun and no extra capabilities.
 # Incoming tailnet connections are forwarded to local ports (here, sshd).
+# tailscaled creates its socket world-writable; a root-only directory keeps the
+# dev user from driving it (e.g. `tailscale nc` to other devices on the tailnet).
 mkdir -p /var/run/tailscale /var/lib/tailscale
+chmod 0700 /var/run/tailscale
 tailscaled --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state \
     --socket=/var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 &
 for _ in $(seq 1 50); do
@@ -58,10 +61,18 @@ if [ -n "${TS_AUTHKEY:-}" ]; then
     # A failed login must not kill the container (restart loop); report it.
     tailscale up --authkey="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME}" --accept-dns=false \
         || echo "[entrypoint] ERROR: tailscale up failed; see /var/log/tailscaled.log" >&2
-elif tailscale status >/dev/null 2>&1; then
-    echo "[entrypoint] Tailscale: using the saved node state"
 else
-    echo "[entrypoint] Tailscale: not logged in (set TS_AUTHKEY in .env to join the tailnet)"
+    ts_state=$(tailscale status --json 2>/dev/null \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin)["BackendState"])' 2>/dev/null || true)
+    if [ "$ts_state" = "NeedsLogin" ] || [ -z "$ts_state" ]; then
+        echo "[entrypoint] Tailscale: not logged in (set TS_AUTHKEY in .env to join the tailnet)"
+    else
+        # Logged in before. The trap below saves the node as stopped on docker
+        # stop, so bring it back up from the saved state.
+        echo "[entrypoint] Tailscale: using the saved node state"
+        tailscale up --hostname="${TS_HOSTNAME}" --accept-dns=false --timeout=60s \
+            || echo "[entrypoint] ERROR: tailscale up from saved state failed; see /var/log/tailscaled.log" >&2
+    fi
 fi
 tailscale status 2>&1 | head -5 || true
 

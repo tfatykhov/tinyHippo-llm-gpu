@@ -7,7 +7,7 @@ NEST GPU (the project build, `../README.md`), CPU NEST 3.9, the Python stack, gi
 
 | | |
 |---|---|
-| Network | The container runs Tailscale itself (userspace mode) and joins the tailnet as its own machine, `tinyhippo-gpu`. It publishes no ports, and the Windows host needs no Tailscale and opens nothing. |
+| Network | The container runs Tailscale itself (userspace mode) and joins the tailnet as its own machine, `tinyhippo-gpu`. It publishes no ports, and the Windows host needs no Tailscale and opens nothing. Tailscale's control socket is root-only, so the dev user cannot use the container to reach other devices on the tailnet. |
 | Who can reach it | Whoever the node is shared with (Tailscale node sharing): they reach this one machine, not the host or the rest of the tailnet. |
 | Login | SSH with public keys only, one account (`max` by default), no root login. Keys come from `secrets/authorized_keys` on the host, installed root-owned at every container start, so they cannot be changed from inside. |
 | Files | No host directory is mounted and there is no Docker socket. The user works in their home directory, a named volume, and moves code with git. |
@@ -17,9 +17,12 @@ What this protects: the host's files, its other containers (databases, other pro
 tailnet. What it does not: the container itself, its GPU time, and outbound internet from it. Treat it as a
 shared workstation account, not a sandbox for untrusted code.
 
-Tested locally on 2026-10-24: key-only SSH as `max` (from inside the container), GPU and both simulators in a
-non-login SSH session, a model run on each simulator, and that the home directory and host key survive a
-recreate. Not yet tested: joining a tailnet and logging in over it. The first real login (step 5) is that test.
+Tested on 2026-10-24 and 2026-10-25: key-only SSH as `max`, GPU and both simulators in a non-login SSH
+session, a model run on each simulator, and that the home directory and host key survive a recreate. On a
+real tailnet: the node joins, comes back from its saved state after a restart or a recreate with
+`TS_AUTHKEY` removed, accepts a key login on its tailnet address (dialled from inside the node), refuses a
+wrong key, and the dev user cannot reach other tailnet devices. Not yet tested: a login from another
+machine. Max's first login (step 5) is that test.
 
 ## Setup on the workstation (once)
 
@@ -34,12 +37,19 @@ recreate. Not yet tested: joining a tailnet and logging in over it. The first re
    mkdir -p gpu/dev/secrets
    curl -fsSL https://github.com/max-talanov.keys > gpu/dev/secrets/authorized_keys
    ```
+   Or generate a dedicated pair here and send the private half to Max over a private channel (he can add a
+   passphrase with `ssh-keygen -p`); delete your copy once he has logged in:
+   ```sh
+   ssh-keygen -t ed25519 -N "" -C max@tinyhippo-gpu -f gpu/dev/secrets/max_tinyhippo_ed25519
+   cp gpu/dev/secrets/max_tinyhippo_ed25519.pub gpu/dev/secrets/authorized_keys
+   ```
    Add your own key on another line if you want to log in too.
 3. Tailscale. In the admin console, create an auth key (Settings > Keys): reusable, tagged (for example
    `tag:tinyhippo`, declared in the ACL policy's `tagOwners`). Copy `.env.example` to `.env` and set
-   `TS_AUTHKEY`. After the first login the node state lives in the `tailscale` volume, so the key can be
-   removed from `.env`; if you do, check with `docker compose -f gpu/dev/compose.yml restart` and the logs
-   that the node comes back from its saved state.
+   `TS_AUTHKEY`. After the first login the node state lives in the `tailscale` volume, so remove the key from
+   `.env`; the node comes back from its saved state on restart. A key from the console's "Add device" page
+   also works, but the node then belongs to your user and its node key expires (180 days by default;
+   Machines > `tinyhippo-gpu` > Disable key expiry).
 4. Start it:
    ```sh
    docker compose -f gpu/dev/compose.yml up -d
