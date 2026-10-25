@@ -13,8 +13,11 @@ NEST GPU (the project build, `../README.md`), CPU NEST 3.9, the Python stack, gi
 | Files | No host directory is mounted and there is no Docker socket. The user works in their home directory, a named volume, and moves code with git. |
 | GPU | The whole RTX 4060 Ti (16 GB), shared with the host's display and with anything else running on it. |
 
-What this protects: the host's files, its other containers (databases, other projects), and the rest of the
-tailnet. What it does not: the container itself, its GPU time, and outbound internet from it. Treat it as a
+What this protects: the host's files, the other containers' files, and the rest of the tailnet. What it does
+not: network services on the host and the LAN. Docker Desktop routes `host.docker.internal` to the host, so
+every port another container publishes (on 0.0.0.0 or 127.0.0.1) and every service listening on the host is
+reachable from the container, as are devices on the local network (tested on 2026-10-25: two Postgres ports
+were reachable as `max`). Nor does it protect the container itself, its GPU time, or outbound internet from it. Treat it as a
 shared workstation account, not a sandbox for untrusted code.
 
 Tested on 2026-10-24 and 2026-10-25: key-only SSH as `max`, GPU and both simulators in a non-login SSH
@@ -64,7 +67,9 @@ machine. Max's first login (step 5) is that test.
    Desktop start at sign-in, and expect an outage after a Windows Update reboot until you sign in again. The
    container restarts on its own (`restart: unless-stopped`).
 
-Optional hardening in the tailnet ACL policy: allow only port 22 to `tag:tinyhippo`.
+Optional hardening in the tailnet ACL policy (needs a tagged node): allow only port 22 to `tag:tinyhippo`,
+and give `tag:tinyhippo` no access as a source, so the node cannot reach the tailnet even if its socket is
+exposed.
 
 ## For the remote user
 
